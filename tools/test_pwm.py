@@ -1,40 +1,39 @@
-"""===== test_pwm.py - DEBIX Model A PWM channel test =====
-***Verify duty-cycle writes and release of the three PWM channels.***
+"""test_pwm.py - DEBIX Model A PWM channel hardware test
 
-Hardware:
-    PWM1 pwmchip0 Pin23: left motor.
-    PWM2 pwmchip1 Pin29: right motor.
-    PWM3 pwmchip2 Pin34: MG996R steering servo.
-
-Example :
-    python test_pwm.py
-    Run only when pwm0 is not already exported on chips 0, 1, and 2.
+Verify duty-cycle writes and release of all three PWM channels.
+Run on the target hardware only when pwm0 is not already exported on chips
+0, 1, and 2. This test controls real hardware outputs.
 """
 
-import time
 from pathlib import Path
+
 from hardware.pwm import PwmChannel
 
-def state(chip):
-    """Return whether pwm0 is currently exported for the specified PWM chip."""
+
+def is_exported(chip):
+    """Return whether pwm0 is currently exported for the specified chip."""
     return Path(f"/sys/class/pwm/pwmchip{chip}/pwm0").exists()
 
-# Refuse to interfere with PWM channels that are already exported.
+
+# Refuse to interfere with channels that are already exported.
 for chip in (0, 1, 2):
-    assert not state(chip), f"pwmchip{chip}/pwm0 is already exported: clean it up first"
+    assert not is_exported(chip), (
+        f"pwmchip{chip}/pwm0 is already exported; clean it up first"
+    )
 
 for chip in (0, 1, 2):
-    # Test each channel at servo-style frequency and verify duty-cycle writes.
-    ch = PwmChannel(chip=chip, freq_hz=50)
+    channel = PwmChannel(chip=chip, freq_hz=50)
     try:
-        assert state(chip)
-        for r in (0.05, 0.075, 0.10):
-            ch.set_duty(r)
-            d = int(Path(f"/sys/class/pwm/pwmchip{chip}/pwm0/duty_cycle").read_text())
-            assert d == int(r * ch.period), (d, r)
-        print(f"chip {chip} OK")
-    # Always disable and release the PWM channel, including after assertion failures.
+        assert is_exported(chip)
+        for ratio in (0.05, 0.075, 0.10):
+            channel.set_duty(ratio)
+            duty_ns = int(
+                Path(f"/sys/class/pwm/pwmchip{chip}/pwm0/duty_cycle").read_text()
+            )
+            assert duty_ns == int(ratio * channel.period), (duty_ns, ratio)
+        print(f"[test_pwm] pwmchip{chip} OK")
     finally:
-        ch.close()
-    assert not state(chip), f"chip {chip}: leak after close()"
-print("PWM: all channels OK, no leaks")
+        channel.close()
+    assert not is_exported(chip), f"pwmchip{chip}: channel still exported after close()"
+
+print("[test_pwm] All channels passed; no exported channels remain.")
